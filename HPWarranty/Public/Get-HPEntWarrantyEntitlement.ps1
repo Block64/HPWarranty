@@ -1,7 +1,9 @@
-﻿Function Get-HPIncWarrantyEntitlement {
+Function Get-HPEntWarrantyEntitlement {
     
     [CmdletBinding(DefaultParameterSetName = '__AllParameterSets')]
-    [OutputType([PSCustomObject])]
+    [OutputType(
+        [PSCustomObject]
+    )]
     
 	Param (
         [Parameter(
@@ -26,7 +28,7 @@
 		[Parameter(
             Mandatory = $true,
             ParameterSetName = 'Static',
-            ValueFromPipelineByPropertyName = $true
+            ValueFromPipeLineByPropertyName = $true
         )]
 		[String]
         $ProductNumber,
@@ -60,37 +62,48 @@
         [Parameter(
             ParameterSetName = 'Static'
         )]
-        [String]
         [ValidateNotNullOrEmpty()]
+        [String]
         $XmlExportPath = $null
 	)
 
     Begin {
-        $request = (Get-Content -Path "$PSScriptRoot\..\RequestTemplates\HPIncWarrantyEntitlement.xml").Replace(
-            '<[!--EntitlementCheckDate--!]>', (Get-Date -Format 'yyyy-MM-dd')
+        [Xml]$registration = Invoke-HPEntSOAPRequest -SOAPRequest (Get-Content -Path "$PSScriptRoot\..\RequestTemplates\HPEntWarrantyRegistration.xml").Replace(
+            '<[!--UniversialDateTime--!]>',$([DateTime]::SpecifyKind($(Get-Date), [DateTimeKind]::Local).ToUniversalTime().ToString('yyyy\/MM\/dd hh:mm:ss \G\M\T'))
+        ) -URL 'https://services.isee.hp.com/ClientRegistration/ClientRegistrationService.asmx' -Action 'http://www.hp.com/isee/webservices/RegisterClient2'
+        
+        $request = (Get-Content -Path "$PSScriptRoot\..\RequestTemplates\HPEntWarrantyEntitlement.xml").Replace(
+            '<[!--Gdid--!]>', $registration.Envelope.Body.RegisterClient2Response.RegisterClient2Result.Gdid
+        ).Replace(
+            '<[!--Token--!]>', $registration.Envelope.Body.RegisterClient2Response.RegisterClient2Result.RegistrationToken
         ).Replace(
             '<[!--CountryCode--!]>', $CountryCode
         )
     }
 
     Process {
-        foreach ($c in $ComputerName) {
+        for ($i = 0; $i -lt $ComputerName.Length; $i++) {
             if (-not ($PSCmdlet.ParameterSetName -eq 'Static')) {
-                if (($systemInformation = Get-HPProductNumberAndSerialNumber -ComputerName $c) -ne $null) {
-                    $SerialNumber = $systemInformation.SerialNumber
+                if (($systemInformation = Get-HPProductNumberAndSerialNumber -ComputerName $ComputerName[$i]) -ne $null) {
                     $ProductNumber = $systemInformation.ProductNumber
+                    $SerialNumber = $systemInformation.SerialNumber
                 } else {
                     continue
                 }
+            } else {
+                $ComputerName[$i] = $null
             }
+
             try {
-                [xml]$entitlement = Invoke-RestMethod -Body $request.Replace(
-                    '<[!--SerialNumber--!]>', $SerialNumber
-                ).Replace(
-                    '<[!--ProductNumber--!]>', $ProductNumber
-                ) -Uri 'https://entitlement-ext.corp.hp.com/es/ES10_1/ESListener'  -ContentType 'text/html' -Method Post -ErrorAction Stop
+                [Xml]$entitlement = (
+                    Invoke-SOAPRequest -SOAPRequest $request.Replace(
+                        '<[!--ProductNumber--!]>', $ProductNumber
+                    ).Replace(
+                        '<[!--SerialNumber--!]>', $SerialNumber
+                    ) -Url 'https://services.isee.hp.com/EntitlementCheck/EntitlementCheckService.asmx' -Action 'http://www.hp.com/isee/webservices/GetOOSEntitlementList2'
+                ).Envelope.Body.GetOOSEntitlementList2Response.GetOOSEntitlementList2Result.Response
             } catch {
-                Write-Error -Message 'Failed to invoke rest method.'
+                Write-Error -Message 'Failed to invoke SOAP request.'
                 continue
             }
 
@@ -108,6 +121,7 @@
                     }
 
                     [PSCustomObject]@{
+                        'ComputerName' = $ComputerName[$i]
                         'SerialNumber' = $SerialNumber
                         'ProductNumber' = $ProductNumber
                         'ProductLineDescription' = $entitlement.GetElementsByTagName('ProductLineDescription').InnerText

@@ -14,9 +14,9 @@
 .PARAMETER Action
     The ISEE Action to be performed.
 .EXAMPLE
-    Invoke-SOAPRequest -SOAPRequest $registrationSOAPRequest -Url 'https://services.isee.hp.com/ClientRegistration/ClientRegistrationService.asmx' -Action 'http://www.hp.com/isee/webservices/RegisterClient2'
+    Invoke-HPEntSOAPRequest -SOAPRequest $registrationSOAPRequest -Url 'https://services.isee.hp.com/ClientRegistration/ClientRegistrationService.asmx' -Action 'http://www.hp.com/isee/webservices/RegisterClient2'
 .EXAMPLE
-    Invoke-SOAPRequest -SOAPRequest $entitlementSOAPRequest -Url 'https://services.isee.hp.com/EntitlementCheck/EntitlementCheckService.asmx' -Action 'http://www.hp.com/isee/webservices/GetOOSEntitlementList2'
+    Invoke-HPEntSOAPRequest -SOAPRequest $entitlementSOAPRequest -Url 'https://services.isee.hp.com/EntitlementCheck/EntitlementCheckService.asmx' -Action 'http://www.hp.com/isee/webservices/GetOOSEntitlementList2'
 .NOTES
     This module contains two XML douments used for the -SOAPRequest Parameter.
     RegistrationSOAPRequest.xml (See Invoke-HPWarrantyRegistrationRequest Cmdlet)
@@ -35,9 +35,11 @@
 .LINK
     http://dotps1.github.io/HPWarranty
 #>
-Function Invoke-SOAPRequest  {
+Function Invoke-HPEntSOAPRequest  {
     
-    [OutputType([Xml])]
+    [OutputType(
+        [Xml]
+    )]
     
     Param (
         [Parameter(
@@ -76,20 +78,24 @@ Function Invoke-SOAPRequest  {
     $soapWebRequest.Timeout = 30000
     $soapWebRequest.ServicePoint.Expect100Continue = $false
     $soapWebRequest.ServicePoint.MaxIdleTime = 2000
-    $soapWebRequest.ProtocolVersion = [system.net.httpversion]::version10
+    $soapWebRequest.ProtocolVersion = [System.Net.HttpVersion]::version10
 
-    $requestStream = $soapWebRequest.GetRequestStream()
-
-    $SOAPRequest.Save($requestStream) 
+    try {
+        $SOAPRequest.Save(
+            ($requestStream = $soapWebRequest.GetRequestStream())
+        ) 
     
-    $requestStream.Close() 
+        $requestStream.Close() 
 
-    $responseStream = ($soapWebRequest.GetResponse()).GetResponseStream() 
+        $responseStream = ($soapWebRequest.GetResponse()).GetResponseStream() 
     
-    $soapReader = [System.IO.StreamReader]($responseStream) 
-    $returnXml = [Xml]$soapReader.ReadToEnd() 
+        $soapReader = [System.IO.StreamReader]($responseStream) 
+        $returnXml = [Xml]$soapReader.ReadToEnd() 
     
-    $responseStream.Close() 
+        $responseStream.Close() 
 
-    return $returnXml 
+        return $returnXml
+    } catch {
+        throw $_
+    }
 }
